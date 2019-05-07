@@ -6,18 +6,20 @@ from keras.models import Model, load_model
 from keras.layers import Input, Embedding, Dropout, Bidirectional, GRU, Lambda, concatenate
 from keras import optimizers
 #from keras import regularizers
+from keras.callbacks import EarlyStopping, ModelCheckpoint
 import numpy as np
-from matplotlib import pyplot as plt
 from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import mean_squared_error
 
 from data_helper import Data
 from embedding_helper import Get_Embedding
+from log_helper import Logger
 
-TIME_STAMP  = strftime("%Y%m%d%H%M%S", localtime())  # to avoid duplicated file names deleting files
+TIME_STAMP  = strftime("%m%d%H%M%S", localtime())  # to avoid duplicated file names deleting files
 TRAINING_DATA_PATH = '../STS-B/train2.tsv'
 TESTING_DATA_PATH = '../STS-B/test2.tsv'
 EMBEDDING_PATH = '../model/GoogleNews-vectors-negative300.bin'
+lg = Logger(TIME_STAMP)
 
 def build_model(hidden_size, drop, sequence_length, vocab2id, update_vocab):
 
@@ -82,19 +84,7 @@ def build_model(hidden_size, drop, sequence_length, vocab2id, update_vocab):
     print(model.summary())
     return model
 
-def plot_loss(history):
-    plt.figure(2)
-    plt.plot(history.history['loss'])
-    plt.plot(history.history['val_loss'])
-    plt.title('Model Loss')
-    plt.ylabel('Loss')
-    plt.xlabel('Epoch')
-    plt.legend(['Training', 'Validation'], loc='upper left')
-    plt.savefig(f'../logs/{TIME_STAMP}.png')
-    #plt.show()
-
-def train_model(train_ratio=0.9, 
-                save_model=False,
+def train_model(train_ratio=0.9,
                 update_vocab=True,
                 batch_size = 32,
                 epochs = 50,
@@ -115,28 +105,38 @@ def train_model(train_ratio=0.9,
     vocabulary_size = data.vocab_size
 
     print('\n')
-    print('# training samples        :', len(x_train[0]))
-    print('# validation samples      :', len(x_val[0]))
-    print('Maximum sequence length   :', sequence_length)
-    print('Vocabulary Size           :', vocabulary_size)
-    print('\n')
+    lg.pr(f'''# training samples        : {len(x_train[0])}
+        # validation samples      : {len(x_val[0])}
+        Maximum sequence length   : {sequence_length}
+        Vocabulary Size           : {vocabulary_size}
+        ''')
 
     model = build_model(
         hidden_size, drop, sequence_length, data.vocab2id, update_vocab)
+    
+    # Early Stopping
+    model_fname = f'../model/{TIME_STAMP}-{epochs}ep-{hidden_size}hs-{drop*10:.0f}dp'
+    callbacks = [EarlyStopping(monitor='val_loss', min_delta=0.001, patience=2),
+             ModelCheckpoint(filepath=model_fname, monitor='val_loss', save_best_only=True)]
 
     training_start_time = time()
     history = model.fit(x_train, y_train, validation_data=(x_val, y_val),
-                        epochs=epochs, batch_size=batch_size, verbose=1)
+                        epochs=epochs, batch_size=batch_size, verbose=1, callbacks=callbacks)
     #verbose: Integer. 0, 1, or 2. Verbosity mode. 0 = silent, 1 = progress bar, 2 = one line per epoch.
-    print(f"Training time finished.\n{epochs} epochs in {timedelta(seconds=time()-training_start_time)}")
+    lg.pr(f"Training time finished.\n{epochs} epochs in {timedelta(seconds=time()-training_start_time)}")
     
-    plot_loss(history)
-
-    model_fname = f'../model/bilstm-{TIME_STAMP}'
-    if save_model:
-        model.save(model_fname)
-        print(f"Model savde. Name: \'{model_fname}\'")
-
+    lg.plot_loss(history)
+    lg.pr(f"""Model saved. Name: \'{model_fname}\'
+        train_ratio    :{train_ratio}
+        update_vocab   :{update_vocab}
+        batch_size     :{batch_size}
+        epochs         :{epochs}
+        sequence_length:{sequence_length}
+        hidden_size    :{hidden_size}
+        drop           :{drop}""")
+    with open(f'../logs/{TIME_STAMP}.txt','a') as model_metadata:
+        model.summary(print_fn=lambda x: model_metadata.write(x + '\n'))
+    
     return model
 
 def test_model(model=None, model_fname=''):
@@ -157,18 +157,18 @@ def test_model(model=None, model_fname=''):
     mse = mean_squared_error(y_test, y_pred)
 
     print("\n")
-    print("# testing samples                           :", len(y_test))
-    print("Pearson correlation coefficient             :", pearson_r)
-    print("Spearman rank-order correlation coefficient :", spearman_rho)
-    print("Total score                                 :", score)
-    print("Mean squred error                           :", mse)
-    print("\n")
-
-    print("Some results (real, predicted): ", [t for t in zip(y_test[:20], y_pred[:20])])
+    lg.pr(f"""# testing samples                           : {len(y_test)}
+        Pearson correlation coefficient             : {pearson_r}
+        Spearman rank-order correlation coefficient : {spearman_rho}
+        Total score                                 : {score}
+        Mean squred error                           : {mse}
+        """)
+    
+    #print("Some results (real, predicted): ", [t for t in zip(y_test[:20], y_pred[:20])])
 
 
 if __name__ == "__main__":
-    model = train_model( train_ratio = 1-1e-1, save_model=True, update_vocab=False, hidden_size=30, epochs=50)
+    model = train_model( train_ratio = 1-1e-1, update_vocab=False, hidden_size=30, epochs=1)
     test_model(model=model)
     #test_model(model_fname='../model/bilstm-20190417142455')
     
