@@ -5,7 +5,7 @@ import string
 
 from pandas import read_csv
 from nltk import word_tokenize
-#from nltk.corpus import stopwords
+from nltk.corpus import stopwords
 from sklearn.model_selection import train_test_split as split_data
 from keras.preprocessing.sequence import pad_sequences as keras_pad
 
@@ -43,7 +43,7 @@ class Data(object):
     def text_to_tokens(self, text):
         filter_set = string.punctuation + r'\\\,\+\.\-'     #TODO: How about 0123456789 ?
         return [sub('\'','',token) 
-                for token in word_tokenize( sub(f'[{filter_set}]', " ", text.lower()) )]
+                for token in word_tokenize( sub(f'[{filter_set}]', " ", text.lower()) )] #token not in set(stopwords.words('english'))
         # Removing stopwords may change the meaning: if token not in set(stopwords.words('english'))
 
     def load_data(self):
